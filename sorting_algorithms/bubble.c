@@ -2,11 +2,9 @@
 #include <omp.h>
 #include <stdint.h>
 #include <string.h>
-
 #include <x86intrin.h>
-
 #include "sorting.h"
-
+#include <stdbool.h>
 /* 
    bubble sort -- sequential, parallel -- 
 */
@@ -14,14 +12,51 @@
 void sequential_bubble_sort (uint64_t *T, const uint64_t size)
 {
     /* TODO: sequential implementation of bubble sort */ 
-    
+    bool tmpSorted = true;
+    do {
+        tmpSorted = true;
+        for(int i = 0; i < size; i++){
+            if(T[i]>T[i+1]) {
+                int tmpSwap = T[i];
+                T[i] = T[i+1];
+                T[i+1] = tmpSwap;
+                tmpSorted = false;
+            }
+        }
+    } while(tmpSorted == false);
+
     return ;
 }
 
-void parallel_bubble_sort (uint64_t *T, const uint64_t size)
+void parallel_bubble_sort (uint64_t *T, const uint64_t size, int nChunks, int nThreads)
 {
     /* TODO: parallel implementation of bubble sort */
-
+    bool tmpSorted = true;
+    int chunkSize = size / nChunks;
+    do {
+        tmpSorted = true;
+        #pragma omp parallel for schedule(static) num_threads (nThreads)
+        for (size_t k = 0; k < nChunks; k++) {
+            for(int i = (chunkSize * k); i < ((chunkSize * (k+1))-1); i++){
+                if(T[i]>T[i+1]) {
+                    int tmpSwap = T[i];
+                    T[i] = T[i+1];
+                    T[i+1] = tmpSwap;
+                    tmpSorted = false;
+                }
+            }
+        }
+        #pragma omp parallel for schedule(static) num_threads (nThreads)
+        for (int i = (chunkSize-1); i < size; i = i + chunkSize) {
+            if (T[i]>T[i+1])
+            {
+                int tmpSwap = T[i];
+                T[i] = T[i+1];
+                T[i+1] = tmpSwap;
+                tmpSorted = false;
+            }
+        }
+    } while(tmpSorted == false);
     return;
 }
 
@@ -34,17 +69,23 @@ int main (int argc, char **argv)
 
     /* the program takes one parameter N which is the size of the array to
        be sorted. The array will have size 2^N */
-    if (argc != 2)
+    if (argc != 4)
     {
-        fprintf (stderr, "bubble.run N \n") ;
+        fprintf (stderr, "bubble.run nSize nChunks nThreads \n") ;
         exit (-1) ;
     }
 
     uint64_t N = 1 << (atoi(argv[1])) ;
+    int nChunks = atoi(argv[2]);
+    int nThreads = atoi(argv[3]);
     /* the array to be sorted */
     uint64_t *X = (uint64_t *) malloc (N * sizeof(uint64_t)) ;
 
-    printf("--> Sorting an array of size %u\n",N);
+    printf("--> Sorting an array of size %lu\n",N);
+    printf("--> Number of chunks %d\n",nChunks);
+    printf("--> Number of threads %d\n",nThreads);
+    printf("--> Number of experiments %d\n",NBEXPERIMENTS);
+
 #ifdef RINIT
     printf("--> The array is initialized randomly\n");
 #endif
@@ -56,13 +97,26 @@ int main (int argc, char **argv)
 #else
         init_array_sequence (X, N);
 #endif
-        
+        // printf("Before : \n");
+        // for (int i = 0; i < N; i++)
+        // {
+        //     printf("%ld ", X[i]);
+        // }
+        // printf("\n");
       
         start = _rdtsc () ;
         
         sequential_bubble_sort (X, N) ;
      
         end = _rdtsc () ;
+
+        // printf("Sequential Res : \n");
+        // for (int i = 0; i < N; i++)
+        // {
+        //     printf("%ld ", X[i]);
+        // }
+        // printf("\n");
+
         experiments [exp] = end - start ;
 
         /* verifying that X is properly sorted */
@@ -98,9 +152,17 @@ int main (int argc, char **argv)
         
         start = _rdtsc () ;
 
-        parallel_bubble_sort (X, N) ;
+        parallel_bubble_sort (X, N, nChunks, nThreads) ;
      
         end = _rdtsc () ;
+
+        // printf("Bubble Res : \n");
+        // for (int i = 0; i < N; i++)
+        // {
+        //     printf("%ld ", X[i]);
+        // }
+        // printf("\n");
+
         experiments [exp] = end - start ;
 
         /* verifying that X is properly sorted */
@@ -139,7 +201,22 @@ int main (int argc, char **argv)
     memcpy(Z, Y, N * sizeof(uint64_t));
 
     sequential_bubble_sort (Y, N) ;
-    parallel_bubble_sort (Z, N) ;
+
+    // printf("2nd Test Sequential Res : \n");
+    // for (int i = 0; i < N; i++)
+    // {
+    //     printf("%ld ", Y[i]);
+    // }
+    // printf("\n");
+
+    parallel_bubble_sort (Z, N, nChunks, nThreads) ;
+
+    // printf("2nd Test Parallel Res : \n");
+    // for (int i = 0; i < N; i++)
+    // {
+    //     printf("%ld ", Z[i]);
+    // }
+    // printf("\n");
 
     if (! are_vector_equals (Y, Z, N)) {
         fprintf(stderr, "ERROR: sorting with the sequential and the parallel algorithm does not give the same result\n") ;

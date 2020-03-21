@@ -2,7 +2,7 @@
 #define __SORTING_H__
 
 
-#define NBEXPERIMENTS    10
+#define NBEXPERIMENTS    8
 long long unsigned int experiments [NBEXPERIMENTS] ;
 
 

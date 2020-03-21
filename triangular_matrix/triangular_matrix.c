@@ -3,8 +3,9 @@
 #include <omp.h>
 #include <x86intrin.h>
 #define NBEXPERIMENTS    7
-#define N              16
+#define N              32
 
+static double mypcfreq = 2.2;
 static long long unsigned int experiments [NBEXPERIMENTS] ;
 typedef double vector [N] ;
 typedef double matrix [N][N] ;
@@ -88,9 +89,9 @@ void mult_mat_vector_tri_inf (matrix M, vector b, vector c) {
   return ;
 }
 
-void mult_mat_vector_tri_inf1 (matrix M, vector b, vector c, int numthreads) {
+void mult_mat_vector_tri_inf1 (matrix M, vector b, vector c, int numthreads, int chunksize) {
   register unsigned int i ;
-  #pragma omp parallel for schedule(static) num_threads (numthreads)
+  #pragma omp parallel for schedule(static, chunksize) num_threads (numthreads)
     for ( i = 0; i < N; i = i + 1) {
       register unsigned int j ;
       register double r ;
@@ -103,9 +104,9 @@ void mult_mat_vector_tri_inf1 (matrix M, vector b, vector c, int numthreads) {
   return ;
 }
 
-void mult_mat_vector_tri_inf2 (matrix M, vector b, vector c, int numthreads) {
+void mult_mat_vector_tri_inf2 (matrix M, vector b, vector c, int numthreads, int chunksize) {
   register unsigned int i ;
-  #pragma omp parallel for schedule(dynamic) num_threads (numthreads)
+  #pragma omp parallel for schedule(dynamic, chunksize) num_threads (numthreads)
     for ( i = 0; i < N; i = i + 1) {
       register unsigned int j ;
       register double r ;
@@ -118,9 +119,9 @@ void mult_mat_vector_tri_inf2 (matrix M, vector b, vector c, int numthreads) {
   return ;
 }
 
-void mult_mat_vector_tri_inf3 (matrix M, vector b, vector c, int numthreads) {
+void mult_mat_vector_tri_inf3 (matrix M, vector b, vector c, int numthreads, int chunksize) {
   register unsigned int i ;
-  #pragma omp parallel for schedule(guided) num_threads (numthreads)
+  #pragma omp parallel for schedule(guided, chunksize) num_threads (numthreads)
     for ( i = 0; i < N; i = i + 1) {
       register unsigned int j ;
       register double r ;
@@ -133,28 +134,28 @@ void mult_mat_vector_tri_inf3 (matrix M, vector b, vector c, int numthreads) {
   return ;
 }
 
-void mult_mat_vector_tri_inf4 (matrix M, vector b, vector c, int numthreads) {
+void mult_mat_vector_tri_inf4 (matrix M, vector b, vector c, int numthreads, int chunksize) {
   return ;
 }
 
 int main (int argc, char*argv[]) 
 {
-  if (argc < 2) {
-    fprintf (stderr, "Use : ./triangular_matrix <thread_number>\n") ;
+  if (argc < 3) {
+    fprintf (stderr, "Use : ./triangular_matrix <thread_number> <chunk_size>\n") ;
     exit (-1) ;
   }
 
   int nthreads =  atoi(argv[1]) ;
-
+  int chunksize =  atoi(argv[2]) ;
   unsigned long long start, end ;
   unsigned long long residu ;
   unsigned long long av ;
   unsigned int exp ;
   double r ;
-  
-  // printf ("number of threads %d\n", omp_get_max_threads ()) ;
-  printf ("number of threads %d\n", nthreads);
-  
+
+  printf ("number of threads : %d\n", nthreads);
+  printf ("chunksize : %d\n", chunksize);
+
   /* rdtsc: read the cycle counter */
   start = _rdtsc () ;
   end = _rdtsc () ;
@@ -162,6 +163,7 @@ int main (int argc, char*argv[])
   
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
+  float mflops = 0;
 
   /*
     print_vector (v1) ;
@@ -179,7 +181,8 @@ int main (int argc, char*argv[])
 
   // print_vector(v2);
   
-  printf ("Full matrix multiplication vector \t\t  %Ld cycles\n", av-residu) ;
+  // mflops = (N*N / ((float)av-residu)) * mypcfreq * 1000;
+  // printf ("Full matrix multiplication vector \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
 
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
@@ -195,14 +198,15 @@ int main (int argc, char*argv[])
 
   // print_vector(v2);
   
-  printf ("Triangular Matrix multiplication vector\t\t  %Ld cycles\n", av-residu) ;
+  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
+  printf ("Triangular Matrix multiplication vector\t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
 
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
 
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
     start = _rdtsc () ;
-    mult_mat_vector_tri_inf1 (M, v1, v2, nthreads)  ;
+    mult_mat_vector_tri_inf1 (M, v1, v2, nthreads, chunksize);
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
@@ -211,14 +215,15 @@ int main (int argc, char*argv[])
   
   // print_vector(v2);
   
-  printf ("Parallel Loop Static Scheduling \t\t  %Ld cycles\n", av-residu) ;
+  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
+  printf ("Parallel Loop Static Scheduling \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
 
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
   
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
     start = _rdtsc () ; 
-    mult_mat_vector_tri_inf2 (M, v1, v2, nthreads)  ;	
+    mult_mat_vector_tri_inf2 (M, v1, v2, nthreads, chunksize)  ;	
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
@@ -227,14 +232,15 @@ int main (int argc, char*argv[])
   
   // print_vector(v2);
   
-  printf ("Parallel Loop Dynamic Scheduling \t\t  %Ld cycles\n", av-residu) ;
+  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
+  printf ("Parallel Loop Dynamic Scheduling \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
 
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
   
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
 	  start = _rdtsc () ; 
-	  mult_mat_vector_tri_inf3 (M, v1, v2, nthreads)  ; 
+	  mult_mat_vector_tri_inf3 (M, v1, v2, nthreads, chunksize)  ; 
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
@@ -245,14 +251,15 @@ int main (int argc, char*argv[])
      print_vector (v2) ;
   */
   
-  printf ("Parallel Loop Guided Scheduling \t\t  %Ld cycles\n", av-residu) ;
+  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
+  printf ("Parallel Loop Guided Scheduling \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
 
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
   
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
 	  start = _rdtsc () ; 
-	  mult_mat_vector_tri_inf4 (M, v1, v2, nthreads); 
+	  mult_mat_vector_tri_inf4 (M, v1, v2, nthreads, chunksize); 
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
