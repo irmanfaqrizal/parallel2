@@ -2,10 +2,9 @@
 #include <math.h>
 #include <omp.h>
 #include <x86intrin.h>
-#define NBEXPERIMENTS    7
-#define N              32
+#define NBEXPERIMENTS    20
+#define N              512
 
-static double mypcfreq = 2.2;
 static long long unsigned int experiments [NBEXPERIMENTS] ;
 typedef double vector [N] ;
 typedef double matrix [N][N] ;
@@ -141,20 +140,22 @@ void mult_mat_vector_tri_inf4 (matrix M, vector b, vector c, int numthreads, int
 int main (int argc, char*argv[]) 
 {
   if (argc < 3) {
-    fprintf (stderr, "Use : ./triangular_matrix <thread_number> <chunk_size>\n") ;
+    fprintf (stderr, "Use : ./triangular_matrix <Chunk Size> <Number of Threads>\n") ;
     exit (-1) ;
   }
-
-  int nthreads =  atoi(argv[1]) ;
-  int chunksize =  atoi(argv[2]) ;
+  int chunksize =  atoi(argv[1]) ;
+  int nthreads =  atoi(argv[2]) ;
   unsigned long long start, end ;
   unsigned long long residu ;
   unsigned long long av ;
   unsigned int exp ;
   double r ;
-
-  printf ("number of threads : %d\n", nthreads);
-  printf ("chunksize : %d\n", chunksize);
+  double Tsequential;
+  double speedup;
+  printf("--> Matrix Size %d x %d\n", N, N);
+  printf("--> Chunk Size %d\n",chunksize);
+  printf("--> Number of threads %d\n",nthreads);
+  printf("--> Number of experiments %d\n\n",NBEXPERIMENTS);
 
   /* rdtsc: read the cycle counter */
   start = _rdtsc () ;
@@ -163,116 +164,70 @@ int main (int argc, char*argv[])
   
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
-  float mflops = 0;
-
-  /*
-    print_vector (v1) ;
-    print_matrix (M) ;
-  */
-  
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
     start = _rdtsc () ;
     mult_mat_vector (M, v1, v2)   ;
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
-
   av = average (experiments) ;
 
-  // print_vector(v2);
-  
-  // mflops = (N*N / ((float)av-residu)) * mypcfreq * 1000;
-  // printf ("Full matrix multiplication vector \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
-
+  // Sequential
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
-
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
     start = _rdtsc () ;
     mult_mat_vector_tri_inf (M, v1, v2)  ;
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
-
   av = average (experiments) ;
+  Tsequential = av-residu;
+  printf ("Sequential Triangular Matrix Multiplication \t  %Ld cycles\n", av-residu) ;
+  // printf ("Result vector : "); print_vector (v2) ;
 
-  // print_vector(v2);
-  
-  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
-  printf ("Triangular Matrix multiplication vector\t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
-
+  // Parallel Static
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
-
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
     start = _rdtsc () ;
     mult_mat_vector_tri_inf1 (M, v1, v2, nthreads, chunksize);
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
-
   av = average (experiments) ;
-  
-  // print_vector(v2);
-  
-  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
-  printf ("Parallel Loop Static Scheduling \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
+  speedup = Tsequential / (av-residu);
+  printf ("Parallel Loop Static Scheduling \t\t  %Ld cycles, speedup : %.3f\n", av-residu, speedup) ;
+  // printf ("Result vector : "); print_vector (v2) ;
 
+  // Parallel Dynamic
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
-  
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
     start = _rdtsc () ; 
     mult_mat_vector_tri_inf2 (M, v1, v2, nthreads, chunksize)  ;	
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
-
   av = average (experiments) ;
-  
-  // print_vector(v2);
-  
-  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
-  printf ("Parallel Loop Dynamic Scheduling \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
+  speedup = Tsequential / (av-residu);
+  printf ("Parallel Loop Dynamic Scheduling \t\t  %Ld cycles, speedup : %.3f\n", av-residu, speedup) ;
+  // printf ("Result vector : "); print_vector (v2) ;
 
+  // Parallel Guided
   init_vector (v1, 1.0) ;
   init_matrix_inf (M, 2.0) ;
-  
   for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
 	  start = _rdtsc () ; 
 	  mult_mat_vector_tri_inf3 (M, v1, v2, nthreads, chunksize)  ; 
     end = _rdtsc () ;
     experiments [exp] = end - start ;
   }
-
   av = average (experiments) ;
-  
-  /* 
-     print_vector (v2) ;
-  */
-  
-  mflops = (N / ((float)av-residu)) * mypcfreq * 1000;
-  printf ("Parallel Loop Guided Scheduling \t\t  %Ld cycles, mflops : %f\n", av-residu, mflops) ;
-
-  init_vector (v1, 1.0) ;
-  init_matrix_inf (M, 2.0) ;
-  
-  for (exp = 0 ; exp < NBEXPERIMENTS; exp++) {
-	  start = _rdtsc () ; 
-	  mult_mat_vector_tri_inf4 (M, v1, v2, nthreads, chunksize); 
-    end = _rdtsc () ;
-    experiments [exp] = end - start ;
-  }
-
-  av = average (experiments) ;
-  
-  /* 
-     print_vector (v2) ;
-  */
-  
-  // printf ("Parallel Loop Runtime Scheduling \t\t  %Ld cycles\n", av-residu) ;
+  speedup = Tsequential / (av-residu);
+  printf ("Parallel Loop Guided Scheduling \t\t  %Ld cycles, speedup : %.3f\n", av-residu, speedup) ;
+  // printf ("Result vector : "); print_vector (v2) ;
 
   return 0;
-  
 }
 
